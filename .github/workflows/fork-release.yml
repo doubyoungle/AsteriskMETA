@@ -137,6 +137,10 @@ jobs:
         with:
           pattern: release-*
           path: build-apks
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '26'
       - uses: android-actions/setup-android@v4
         with:
           accept-android-sdk-licenses: false
