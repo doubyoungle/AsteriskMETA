@@ -3,6 +3,10 @@ name: Build Release APKs
 on:
   workflow_dispatch:
     inputs:
+      fork_sign_test_build:
+        description: "Sign APK artifacts for device testing on the fork"
+        default: false
+        type: boolean
       fork_release_tag:
         description: "Existing fork release tag to build and publish (optional)"
         required: false
@@ -35,6 +39,7 @@ jobs:
     uses: ./.github/workflows/fork-release.yml
     with:
       release_tag: ${{ github.ref_type == 'tag' && github.ref_name || inputs.fork_release_tag || '' }}
+      sign_test_build: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.fork_sign_test_build }}
     secrets: inherit
 
   build:

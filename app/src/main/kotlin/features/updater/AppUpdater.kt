@@ -3,6 +3,7 @@
 
 package features.updater
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -155,10 +156,10 @@ internal object AppUpdater {
         Uri.fromParts("package", context.packageName, null),
     )
 
-    fun install(context: Context, apk: File) {
+    fun install(activity: Activity, apk: File) {
         if (!apk.isFile) throw IOException("Downloaded APK is missing")
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
-        context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+        val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", apk)
+        activity.startActivity(Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, ApkMimeType)
             clipData = ClipData.newRawUri(apk.name, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

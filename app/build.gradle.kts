@@ -19,6 +19,11 @@ require(bundledCoreId == "mihomo" || bundledCoreId == "meow") {
     "Gradle property core must be mihomo or meow, but was $bundledCoreId"
 }
 val bundledCoreArtifact = if (bundledCoreId == "meow") "libclash-rs" else "libclash"
+val forkRevision = providers.gradleProperty("asteriskMetaForkRevision").get()
+require(forkRevision.matches(Regex("[1-9][0-9]*"))) {
+    "asteriskMetaForkRevision must be a positive integer"
+}
+val appVersionName = "${ProjectConfig.VERSION_NAME}-r.$forkRevision"
 
 android {
     namespace = "app"
@@ -41,7 +46,7 @@ android {
         minSdk = ProjectConfig.MIN_SDK
         targetSdk = ProjectConfig.TARGET_SDK
         versionCode = getGitVersionCode()
-        versionName = ProjectConfig.VERSION_NAME
+        versionName = appVersionName
         manifestPlaceholders["appUpdateCore"] = bundledCoreId
     }
 
@@ -171,7 +176,7 @@ val generateProjectInfo = tasks.register<GenerateProjectInfoTask>("generateProje
     description = "Generate ProjectInfo object for the app"
     packageName.set("app")
     projectName.set(ProjectConfig.PROJECT_NAME)
-    versionName.set(ProjectConfig.VERSION_NAME)
+    versionName.set(appVersionName)
     versionCode.set(getGitVersionCode())
     androidLibClashLiteVersion.set(ProjectConfig.ANDROID_LIB_CLASH_LITE_VERSION)
     hevSocks5TunnelVersion.set(ProjectConfig.HEV_SOCKS5_TUNNEL_VERSION)

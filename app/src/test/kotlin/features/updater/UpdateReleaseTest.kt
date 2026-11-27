@@ -21,6 +21,20 @@ class UpdateReleaseTest {
     }
 
     @Test
+    fun acceptsForkRevisionWhenItsVersionCodeIsNewer() {
+        val mihomo = "AsteriskMETA_1.3.0-r.2-622-arm64-v8a.apk"
+        val meow = "AsteriskMETA_1.3.0-r.2-meow-622-arm64-v8a.apk"
+        val metadata = release(listOf(mihomo, meow), versionCode = 622, tag = "v1.3.0-r.2")
+        val abis = listOf("arm64-v8a")
+
+        val update = selectUpdate(metadata, repository, 621, "meow", abis)
+        assertEquals(meow, update?.name)
+        assertEquals("1.3.0-r.2", update?.versionName)
+        assertEquals(mihomo, selectUpdate(metadata, repository, 621, "mihomo", abis)?.name)
+        assertNull(selectUpdate(metadata, repository, 622, "meow", abis))
+    }
+
+    @Test
     fun keepsBundledCoreEvenWhenAnotherCoreHasAnExactAbi() {
         val mihomo = "AsteriskMETA_1.3.0-615-arm64-v8a.apk"
         val meow = "AsteriskMETA_1.3.0-meow-615-universal.apk"
@@ -89,11 +103,15 @@ class UpdateReleaseTest {
     private fun select(names: List<String>, installed: Long = 614, core: String = "mihomo") =
         selectUpdate(release(names), repository, installed, core, listOf("arm64-v8a", "armeabi-v7a"))
 
-    private fun release(names: List<String>, versionCode: Int? = null): String {
+    private fun release(
+        names: List<String>,
+        versionCode: Int? = null,
+        tag: String = "v1.3.0",
+    ): String {
         val assets = names.joinToString(",") { name ->
-            """{"name":"$name","size":42,"browser_download_url":"https://github.com/$repository/releases/download/v1.3.0/$name"}"""
+            """{"name":"$name","size":42,"browser_download_url":"https://github.com/$repository/releases/download/$tag/$name"}"""
         }
         val version = versionCode?.let { """"versionCode":$it,""" }.orEmpty()
-        return """{${version}"tag_name":"v1.3.0","assets":[$assets]}"""
+        return """{${version}"tag_name":"$tag","assets":[$assets]}"""
     }
 }

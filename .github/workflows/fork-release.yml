@@ -6,6 +6,9 @@ on:
       release_tag:
         type: string
         default: ''
+      sign_test_build:
+        type: boolean
+        default: false
 
 env:
   RELEASE_TAG: ${{ inputs.release_tag }}
@@ -35,9 +38,15 @@ jobs:
         if: inputs.release_tag != ''
         run: |
           set -euo pipefail
-          version="$(awk -F '"' '/^[[:space:]]*const val VERSION_NAME = "/ { print $2; exit }' buildSrc/src/main/kotlin/BuildConfig.kt)"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || "$RELEASE_TAG" != "v$version" ]]; then
-            echo "::error::Use a stable ProjectConfig.VERSION_NAME and its matching v-prefixed tag."
+          upstream_version="$(awk -F '"' '/^[[:space:]]*const val VERSION_NAME = "/ { print $2; exit }' buildSrc/src/main/kotlin/BuildConfig.kt)"
+          fork_revision="$(awk -F '=' '$1 == "asteriskMetaForkRevision" { print $2; exit }' gradle.properties)"
+          expected_tag="v${upstream_version}-r.${fork_revision}"
+          if [[ ! "$upstream_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::A formal fork release requires a stable upstream ProjectConfig.VERSION_NAME."
+            exit 1
+          fi
+          if [[ ! "$fork_revision" =~ ^[1-9][0-9]*$ || "$RELEASE_TAG" != "$expected_tag" ]]; then
+            echo "::error::Use the tag matching the upstream version and a positive fork revision (expected $expected_tag)."
             exit 1
           fi
 
@@ -127,8 +136,8 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
-  publish:
-    if: inputs.release_tag != ''
+  package:
+    if: inputs.release_tag != '' || inputs.sign_test_build
     needs: build
     concurrency: fork-publish
     permissions:
@@ -164,9 +173,25 @@ jobs:
           set -euo pipefail
           package_script="$RUNNER_TEMP/package-fork-release.sh"
           cp .github/scripts/package-fork-release.sh "$package_script"
-          git switch --detach "refs/tags/$RELEASE_TAG"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            git switch --detach "refs/tags/$RELEASE_TAG"
+          else
+            upstream_version="$(awk -F '"' '/^[[:space:]]*const val VERSION_NAME = "/ { print $2; exit }' buildSrc/src/main/kotlin/BuildConfig.kt)"
+            fork_revision="$(awk -F '=' '$1 == "asteriskMetaForkRevision" { print $2; exit }' gradle.properties)"
+            export RELEASE_TAG="v${upstream_version}-r.${fork_revision}"
+          fi
           bash "$package_script"
+
+      - name: Upload signed test APKs
+        if: inputs.release_tag == '' && inputs.sign_test_build
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-test-apks
+          path: release-artifacts/*.apk
+          if-no-files-found: error
+
       - name: Publish complete release
+        if: inputs.release_tag != ''
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG"
