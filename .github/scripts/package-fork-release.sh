@@ -7,7 +7,7 @@ set -euo pipefail
 : "${RELEASE_KEY_ALIAS:?Missing RELEASE_KEY_ALIAS}"
 export RELEASE_KEY_PASSWORD="${RELEASE_KEY_PASSWORD:-$RELEASE_KEYSTORE_PASSWORD}"
 
-version="${GITHUB_REF_NAME#v}"
+version="${RELEASE_TAG#v}"
 version_code="$(git rev-list --count HEAD)"
 build_tools_version="$(sed -n 's/^[[:space:]]*const val BUILD_TOOLS_VERSION = "\([^"]*\)".*/\1/p' buildSrc/src/main/kotlin/BuildConfig.kt)"
 tools="$ANDROID_HOME/build-tools/$build_tools_version"
@@ -66,7 +66,7 @@ import sys
 from pathlib import Path
 
 directory = Path("release-artifacts")
-tag = os.environ["GITHUB_REF_NAME"]
+tag = os.environ["RELEASE_TAG"]
 download_base = f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}/releases/download/{tag}'
 assets = []
 for apk in sorted(directory.glob("*.apk")):
