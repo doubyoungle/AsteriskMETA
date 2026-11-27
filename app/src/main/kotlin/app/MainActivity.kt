@@ -30,6 +30,7 @@ import data.AppSettingsPreferences
 import engine.mihomo.MihomoProfileContentStore
 import engine.vpn.AndroidVpnPermissionRequester
 import features.boot.BootAutoConnect
+import features.updater.AppUpdater
 import features.qr.AndroidQrCodeScanRequester
 import features.settings.locale.localizedAppContext
 import features.subscription.isSubscriptionInstallConfigUri
@@ -213,6 +214,7 @@ class MainActivity : ComponentActivity() {
             backupFileCreatorLauncher.launch(fileName)
         }
         showAppContent()
+        lifecycleScope.launch { AppUpdater.check(applicationContext) }
         requestStartupPermissions()
         if (savedInstanceState == null) {
             readAutoConnectRequest(intent)

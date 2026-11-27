@@ -42,6 +42,7 @@ android {
         targetSdk = ProjectConfig.TARGET_SDK
         versionCode = getGitVersionCode()
         versionName = ProjectConfig.VERSION_NAME
+        manifestPlaceholders["appUpdateCore"] = bundledCoreId
     }
 
     androidResources {
@@ -159,6 +160,7 @@ dependencies {
     implementation(libs.sora.editor)
     implementation(libs.zxing.android.embedded)
     ksp(libs.androidx.room.compiler)
+    testImplementation(libs.junit)
 }
 
 ksp {

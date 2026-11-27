@@ -26,7 +26,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  fork-release:
+    if: github.event.repository.fork && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/fork-release.yml
+    secrets: inherit
+
   build:
+    if: github.repository == 'Asterisk4Magisk/AsteriskMETA'
     name: Build ${{ matrix.core }}
     runs-on: ubuntu-latest
     timeout-minutes: 60

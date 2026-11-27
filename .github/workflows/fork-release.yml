@@ -1,0 +1,174 @@
+name: Fork release
+
+on: workflow_call
+
+jobs:
+  build:
+    name: Build ${{ matrix.core }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        core: [mihomo, meow]
+    env:
+      CORE_ID: ${{ matrix.core }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Validate version
+        if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^[[:space:]]*const val VERSION_NAME = "\([^"]*\)".*/\1/p' buildSrc/src/main/kotlin/BuildConfig.kt)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Use a stable ProjectConfig.VERSION_NAME and its matching v-prefixed tag."
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '26'
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: false
+          packages: ""
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          android_sdk=(android --no-metrics --sdk="$ANDROID_HOME" sdk)
+
+          build_tools_version="$(sed -n 's/^[[:space:]]*const val BUILD_TOOLS_VERSION = "\([^"]\+\)".*/\1/p' buildSrc/src/main/kotlin/BuildConfig.kt | head -n 1)"
+          target_sdk="$(sed -n 's/^[[:space:]]*const val TARGET_SDK = \([0-9]\+\).*/\1/p' buildSrc/src/main/kotlin/BuildConfig.kt | head -n 1)"
+          if [ -z "$target_sdk" ]; then
+            echo "::error::Unable to read ProjectConfig.TARGET_SDK from buildSrc/src/main/kotlin/BuildConfig.kt."
+            exit 1
+          fi
+
+          target_sdk_minor="$(sed -n 's/^[[:space:]]*const val TARGET_SDK_MINOR = \([0-9]\+\).*/\1/p' buildSrc/src/main/kotlin/BuildConfig.kt | head -n 1)"
+          if [ -z "$target_sdk_minor" ]; then
+            echo "::error::Unable to read ProjectConfig.TARGET_SDK_MINOR from buildSrc/src/main/kotlin/BuildConfig.kt."
+            exit 1
+          fi
+
+          ndk_version="$(sed -n 's/^[[:space:]]*const val NDK_VERSION = "\([^"]\+\)".*/\1/p' buildSrc/src/main/kotlin/BuildConfig.kt | head -n 1)"
+          if [ -z "$ndk_version" ]; then
+            echo "::error::Unable to read ProjectConfig.NDK_VERSION from buildSrc/src/main/kotlin/BuildConfig.kt."
+            exit 1
+          fi
+
+          available_packages="$("${android_sdk[@]}" list --all | awk '{ print $1 }')"
+          platform_package="platforms/android-${target_sdk}"
+          if ! grep -Fxq "$platform_package" <<< "$available_packages"; then
+            if grep -Fxq "platforms/android-${target_sdk}.0" <<< "$available_packages"; then
+              platform_package="platforms/android-${target_sdk}.0"
+            else
+              echo "::error::No Android SDK platform package is available for TARGET_SDK=$target_sdk."
+              exit 1
+            fi
+          fi
+
+          build_tools_package="build-tools/$build_tools_version"
+          ndk_package="ndk/$ndk_version"
+          cmake_package="$(printf '%s\n' "$available_packages" | awk '$1 ~ /^cmake\/[0-9]/ { print $1 }' | sort -V | tail -n 1)"
+
+          if ! grep -Fxq "$build_tools_package" <<< "$available_packages"; then
+            echo "::error::Android build-tools package $build_tools_package requested by ProjectConfig.BUILD_TOOLS_VERSION is not available from Android CLI."
+            exit 1
+          fi
+          if ! grep -Fxq "$ndk_package" <<< "$available_packages"; then
+            echo "::error::Android NDK package $ndk_package requested by ProjectConfig.NDK_VERSION is not available from Android CLI."
+            exit 1
+          fi
+          if [ -z "$cmake_package" ]; then
+            echo "::error::No Android CMake package is available from Android CLI."
+            exit 1
+          fi
+
+          "${android_sdk[@]}" install platform-tools "$platform_package" "platforms/android-${target_sdk}.${target_sdk_minor}" "$build_tools_package" "$ndk_package" "$cmake_package"
+
+          echo "ANDROID_BUILD_TOOLS_VERSION=$build_tools_version" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk_version" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$ndk_version" >> "$GITHUB_ENV"
+
+      - name: Build release APKs
+        run: bash ./gradlew --no-daemon :app:assembleRelease -Pcore="$CORE_ID"
+
+      - name: Test update selection and lint
+        if: github.ref_type != 'tag' && matrix.core == 'mihomo'
+        run: bash ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug -Pcore="$CORE_ID"
+
+      - name: Upload build APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.core }}
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: build
+    concurrency: fork-publish
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: build-apks
+      - uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: false
+          packages: ""
+      - name: Sign APKs and generate manifest
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: bash .github/scripts/package-fork-release.sh
+      - name: Publish complete release
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          candidate="$(git rev-list --count HEAD)"
+          latest="$(gh release list --exclude-drafts --exclude-pre-releases --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName')"
+          if [[ -n "$latest" && "$latest" != "$tag" ]]; then
+            published="$(gh release download "$latest" --pattern update-manifest.json --output - | jq -er '.versionCode | select(type == "number" and . > 0 and floor == .)')"
+            if (( candidate <= published )); then
+              echo "::error::The new versionCode ($candidate) must exceed the latest release ($published)."
+              exit 1
+            fi
+          fi
+          if existing="$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [[ "$existing" != true ]]; then
+              echo "::error::A published release already exists for $tag."
+              exit 1
+            fi
+          else
+            gh release create "$tag" --verify-tag --draft --title "AsteriskMETA ${tag#v}" \
+              --generate-notes --notes "Version code: $candidate"
+          fi
+          gh release upload "$tag" release-artifacts/* --clobber
+          gh release edit "$tag" --draft=false --latest

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_update_title">应用更新</string>
+    <string name="app_update_check">检查更新</string>
+    <string name="app_update_checking">正在检查更新…</string>
+    <string name="app_update_available">有可用更新 %1$s（%2$d）</string>
+    <string name="app_update_current">暂无兼容的更新版本。</string>
+    <string name="app_update_check_failed">检查更新失败，请重试。</string>
+    <string name="app_update_download">下载更新</string>
+    <string name="app_update_confirm">下载与当前核心匹配的 APK 并打开 Android 安装程序？</string>
+    <string name="app_update_downloading">正在下载更新…</string>
+    <string name="app_update_download_failed">下载或校验更新失败。</string>
+    <string name="app_update_install">安装已下载的更新</string>
+    <string name="app_update_install_failed">无法打开 Android 安装程序。</string>
+    <string name="app_update_permission_needed">请允许此应用安装未知来源的应用，然后重试。</string>
+</resources>
