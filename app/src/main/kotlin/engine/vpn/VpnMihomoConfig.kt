@@ -19,7 +19,6 @@ import engine.mihomo.effectiveMihomoTunCongestionController
 import engine.mihomo.mihomoControllerSocket
 import engine.mihomo.prepareMihomoCoreLogPaths
 import engine.mihomo.raw.MihomoRawControllerConfig
-import engine.mihomo.raw.provesDnsHijack
 import engine.mihomo.raw.runtimeIpv6Enabled
 import engine.mihomo.selectedMihomoProfileOrNull
 import utils.sha256Hex
@@ -104,7 +103,7 @@ internal object VpnMihomoConfigFactory {
             enableLocalDns = if (rawConfig == null) {
                 appState.effectiveLocalDnsEnabled
             } else {
-                appState.enableLocalDns && rawConfig.provesDnsHijack(appState.runMode, appState.enableVpnHevTun)
+                appState.enableLocalDns && rawConfig.dnsHijack.value?.proven == true
             },
             dnsServers = tunOptions.dnsServers,
             mihomoProfilePath = profilePath,

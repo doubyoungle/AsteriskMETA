@@ -94,7 +94,6 @@ import engine.mihomo.raw.MihomoRawConfigParser
 import engine.mihomo.raw.MihomoRawConfigSnapshot
 import engine.mihomo.raw.RawConfigReadiness
 import engine.mihomo.raw.check
-import engine.mihomo.raw.provesDnsHijack
 import utils.sha256Hex
 import features.settings.SettingsActionRow
 import features.settings.SettingsDropdownRow
@@ -656,7 +655,6 @@ fun MihomoProfileEditPage(
                                     rawReadiness = rawCheck?.readiness,
                                     rawSnapshot = rawParseResult?.snapshot,
                                     runMode = appState.runMode,
-                                    vpnUsesHev = appState.enableVpnHevTun,
                                     onDisableOverridesChange = { enabled ->
                                         if (enabled) showRawModeConfirmation = true else disableOverrides = false
                                     },
@@ -739,7 +737,6 @@ fun MihomoProfileEditPage(
                 rawReadiness = rawCheck?.readiness,
                 rawSnapshot = rawParseResult?.snapshot,
                 runMode = appState.runMode,
-                vpnUsesHev = appState.enableVpnHevTun,
                 onDisableOverridesChange = { enabled ->
                     if (enabled) showRawModeConfirmation = true else disableOverrides = false
                 },
@@ -980,7 +977,6 @@ private fun ColumnScope.UrlProfileFields(
     rawReadiness: RawConfigReadiness?,
     rawSnapshot: MihomoRawConfigSnapshot?,
     runMode: Int,
-    vpnUsesHev: Boolean,
     onDisableOverridesChange: (Boolean) -> Unit,
 ) {
     OutlinedTextField(
@@ -1083,7 +1079,6 @@ private fun ColumnScope.UrlProfileFields(
                 readiness = rawReadiness,
                 snapshot = rawSnapshot,
                 runMode = runMode,
-                vpnUsesHev = vpnUsesHev,
                 onEnabledChange = { value -> if (enabled) onDisableOverridesChange(value) },
             )
         }
@@ -1102,7 +1097,6 @@ private fun FileProfilePropertiesSheet(
     rawReadiness: RawConfigReadiness?,
     rawSnapshot: MihomoRawConfigSnapshot?,
     runMode: Int,
-    vpnUsesHev: Boolean,
     onDisableOverridesChange: (Boolean) -> Unit,
     onSelectedOverrideScriptIndexChange: (Int) -> Unit,
     onDismissRequest: () -> Unit,
@@ -1164,7 +1158,6 @@ private fun FileProfilePropertiesSheet(
                         readiness = rawReadiness,
                         snapshot = rawSnapshot,
                         runMode = runMode,
-                        vpnUsesHev = vpnUsesHev,
                         onEnabledChange = onDisableOverridesChange,
                     )
                 }
@@ -1232,7 +1225,6 @@ private fun RawConfigModeControl(
     readiness: RawConfigReadiness?,
     snapshot: MihomoRawConfigSnapshot?,
     runMode: Int,
-    vpnUsesHev: Boolean,
     onEnabledChange: (Boolean) -> Unit,
 ) {
     Surface(
@@ -1285,7 +1277,7 @@ private fun RawConfigModeControl(
                 )
                 RawCapabilityRow(
                     title = stringResource(R.string.mihomo_profile_raw_dns_hijack),
-                    value = if (snapshot?.provesDnsHijack(runMode, vpnUsesHev) == true) {
+                    value = if (snapshot?.dnsHijack?.value?.proven == true) {
                         stringResource(R.string.mihomo_profile_raw_configured)
                     } else {
                         stringResource(R.string.mihomo_profile_raw_unavailable)

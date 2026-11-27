@@ -12,7 +12,6 @@ import engine.mihomo.DefaultMihomoDnsFakeIpRange
 import engine.mihomo.MihomoProfileFactory
 import engine.mihomo.prepareMihomoCoreLogPaths
 import engine.mihomo.raw.MihomoRawConfigSnapshot
-import engine.mihomo.raw.provesDnsHijack
 import engine.mihomo.raw.runtimeIpv6Enabled
 import engine.mihomo.selectedMihomoProfileOrNull
 import engine.network.parseCidrAddressOrNull
@@ -69,7 +68,7 @@ private fun AppState.toRootStartConfig(
     rawConfig: MihomoRawConfigSnapshot?,
 ): RootStartConfig {
     val dataDirectory = File(resourceFilePaths.dataDir)
-    val rawDnsHijack = rawConfig?.provesDnsHijack(runMode) == true && enableLocalDns
+    val rawDnsHijack = rawConfig?.dnsHijack?.value?.proven == true && enableLocalDns
     return RootStartConfig(
         mihomoProfileBytes = mihomoProfileBytes,
         ageSecretKey = selectedMihomoProfileOrNull()?.ageSecretKey?.takeIf(String::isNotEmpty),
