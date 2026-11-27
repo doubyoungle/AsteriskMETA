@@ -6,6 +6,12 @@
 
 同步使用普通 Git 合并。若出现冲突，工作流会失败并保留远端分支。维护者可在本地合并上游 `main`、解决冲突并测试后推送。如果仓库规则拒绝默认 `GITHUB_TOKEN` 更新工作流文件，可用具有此仓库 Contents 和 Workflows 写权限的凭据配置 `UPSTREAM_SYNC_TOKEN`，或手动合并。
 
+## 自动跟随上游正式发版
+
+**Follow Upstream Release** 每六小时检查一次上游最新正式 Release，从 `v1.3.1` 起跟随。工作流以正式标签指向的源码为基线，把 fork 主分支相对上游的修改应用到这份源码，再调用双核心构建、测试、签名和发布流程。应用补丁有冲突、基线版本号不一致、测试失败或版本码不够高时，本次发布会失败，原因可在 Actions 日志中查看。
+
+可以在 Actions 手动运行并保持 `check_only` 勾选来演练。演练不推送标签，也不调用发布任务。仓库变量 `AUTO_FORK_RELEASE_ENABLED=true` 启用定时发布。重复检查跳过当前或更早的已发布 fork 版本。失败后重跑时会复用验证通过的已有标签。
+
 ## 构建与发布
 
 - 在 **Build Release APKs** 中对 `main` 执行 **Run workflow**，可以构建两个核心、运行更新器测试和 lint，并下载构建产物。普通分支运行会生成未签名产物。对 `main` 勾选 `fork_sign_test_build` 可生成沿用 fork 签名的 `signed-test-apks`，用于设备覆盖安装验证。分支测试包仅作为 Actions 产物上传。界面上的版本覆盖和 Telegram 输入仅供上游工作流使用。

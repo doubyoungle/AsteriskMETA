@@ -6,6 +6,9 @@ on:
       release_tag:
         type: string
         default: ''
+      automatic:
+        type: boolean
+        default: false
       sign_test_build:
         type: boolean
         default: false
@@ -126,7 +129,7 @@ jobs:
         run: bash ./gradlew --no-daemon :app:assembleRelease -Pcore="$CORE_ID"
 
       - name: Test update selection and lint
-        if: inputs.release_tag == '' && matrix.core == 'mihomo'
+        if: inputs.automatic || (inputs.release_tag == '' && matrix.core == 'mihomo')
         run: bash ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug -Pcore="$CORE_ID"
 
       - name: Upload build APKs
@@ -192,10 +195,24 @@ jobs:
 
       - name: Publish complete release
         if: inputs.release_tag != ''
+        env:
+          AUTOMATIC_RELEASE: ${{ inputs.automatic }}
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG"
           candidate="$(git rev-list --count HEAD)"
+          if [[ "$AUTOMATIC_RELEASE" == true ]]; then
+            upstream_latest="$(gh api repos/Asterisk4Magisk/AsteriskMETA/releases/latest --jq '.tag_name')"
+            if [[ "$tag" != "$upstream_latest-r.1" ]]; then
+              echo "::error::Upstream latest changed to $upstream_latest during this build. Skipping $tag."
+              exit 1
+            fi
+            floor="$(bash .github/scripts/fork-version-floor.sh)"
+            if (( candidate <= floor )); then
+              echo "::error::Candidate versionCode $candidate no longer exceeds the test build floor $floor."
+              exit 1
+            fi
+          fi
           latest="$(gh release list --exclude-drafts --exclude-pre-releases --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName')"
           if [[ -n "$latest" && "$latest" != "$tag" ]]; then
             published="$(gh release download "$latest" --pattern update-manifest.json --output - | jq -er '.versionCode | select(type == "number" and . > 0 and floor == .)')"
