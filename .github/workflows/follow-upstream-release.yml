@@ -1,0 +1,44 @@
+name: Follow Upstream Release
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: Check the release plan without creating a tag or release
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency: follow-upstream-release
+
+jobs:
+  prepare:
+    if: >-
+      github.event.repository.fork && github.ref == 'refs/heads/main' &&
+      (inputs.check_only || vars.AUTO_FORK_RELEASE_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check upstream release and prepare fork tag
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_ONLY: ${{ inputs.check_only || github.event_name == 'workflow_dispatch' && vars.AUTO_FORK_RELEASE_ENABLED != 'true' }}
+        run: bash .github/scripts/follow-upstream-release.sh
+
+  release:
+    needs: prepare
+    if: needs.prepare.outputs.release_tag != ''
+    uses: ./.github/workflows/fork-release.yml
+    with:
+      release_tag: ${{ needs.prepare.outputs.release_tag }}
+      automatic: true
+    secrets: inherit

@@ -3,6 +3,14 @@ name: Build Release APKs
 on:
   workflow_dispatch:
     inputs:
+      fork_sign_test_build:
+        description: "Sign APK artifacts for device testing on the fork"
+        default: false
+        type: boolean
+      fork_release_tag:
+        description: "Existing fork release tag to build and publish (optional)"
+        required: false
+        type: string
       version_name:
         description: "Override output file version name, for example 1.0.1"
         required: false
@@ -26,7 +34,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  fork-release:
+    if: github.event.repository.fork && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/fork-release.yml
+    with:
+      release_tag: ${{ github.ref_type == 'tag' && github.ref_name || inputs.fork_release_tag || '' }}
+      sign_test_build: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.fork_sign_test_build }}
+    secrets: inherit
+
   build:
+    if: github.repository == 'Asterisk4Magisk/AsteriskMETA'
     name: Build ${{ matrix.core }}
     runs-on: ubuntu-latest
     timeout-minutes: 60

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import app.LocalIsWideScreen
 import app.LocalNavigator
 import app.R
+import features.updater.AppUpdateSection
 import androidx.compose.ui.res.stringResource
 import ui.layout.pageContentPaddingWithCutout
 import ui.layout.pageListPadding
@@ -59,6 +60,7 @@ fun AboutPage(
         ) {
             item(key = "about_identity") { AboutIdentityHeader() }
             item(key = "about_runtime") { AboutRuntimeSection() }
+            item(key = "app_update") { AppUpdateSection() }
             item(key = "about_other") {
                 AboutLinksSection(title = stringResource(R.string.about_other))
             }
