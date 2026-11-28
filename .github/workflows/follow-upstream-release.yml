@@ -6,39 +6,72 @@ on:
   workflow_dispatch:
     inputs:
       check_only:
-        description: Check the release plan without creating a tag or release
+        description: Validate release selection and versionCode without tagging or publishing
         type: boolean
         default: true
 
 permissions:
-  contents: write
+  contents: read
 
-concurrency: follow-upstream-release
+concurrency:
+  group: asteriskmeta-follow-upstream-release
+  cancel-in-progress: false
 
 jobs:
-  prepare:
-    if: >-
-      github.event.repository.fork && github.ref == 'refs/heads/main' &&
-      (inputs.check_only || vars.AUTO_FORK_RELEASE_ENABLED == 'true')
+  check:
+    if: github.repository == 'doubyoungle/AsteriskMETA' && github.ref == 'refs/heads/main' && inputs.check_only
     runs-on: ubuntu-latest
-    outputs:
-      release_tag: ${{ steps.plan.outputs.release_tag }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Check upstream release and prepare fork tag
-        id: plan
+          persist-credentials: false
+      - name: Check upstream Latest and versionCode
         env:
           GH_TOKEN: ${{ github.token }}
-          CHECK_ONLY: ${{ inputs.check_only || github.event_name == 'workflow_dispatch' && vars.AUTO_FORK_RELEASE_ENABLED != 'true' }}
-        run: bash .github/scripts/follow-upstream-release.sh
+          CHECK_ONLY: 'true'
+          UPSTREAM_START_TAG: ${{ vars.UPSTREAM_START_TAG }}
+          DISTRIBUTED_VERSION_CODE_FLOOR: ${{ vars.DISTRIBUTED_VERSION_CODE_FLOOR }}
+        run: python3 .github/scripts/follow-upstream-release.py
+
+  prepare:
+    if: >-
+      github.repository == 'doubyoungle/AsteriskMETA' && github.ref == 'refs/heads/main' &&
+      !inputs.check_only && vars.AUTO_FORK_RELEASE_ENABLED == 'true'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release_tag: ${{ steps.prepare.outputs.release_tag }}
+      release_commit: ${{ steps.prepare.outputs.release_commit }}
+      upstream_commit: ${{ steps.prepare.outputs.upstream_commit }}
+      version_code: ${{ steps.prepare.outputs.version_code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Prepare a release from the upstream tag
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_ONLY: 'false'
+          UPSTREAM_START_TAG: ${{ vars.UPSTREAM_START_TAG }}
+          DISTRIBUTED_VERSION_CODE_FLOOR: ${{ vars.DISTRIBUTED_VERSION_CODE_FLOOR }}
+          SIGNING_READY: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' && secrets.RELEASE_KEYSTORE_PASSWORD != '' && secrets.RELEASE_KEY_ALIAS != '' }}
+        run: python3 .github/scripts/follow-upstream-release.py
 
   release:
     needs: prepare
     if: needs.prepare.outputs.release_tag != ''
+    permissions:
+      contents: write
     uses: ./.github/workflows/fork-release.yml
     with:
       release_tag: ${{ needs.prepare.outputs.release_tag }}
+      release_commit: ${{ needs.prepare.outputs.release_commit }}
+      upstream_commit: ${{ needs.prepare.outputs.upstream_commit }}
+      version_code: ${{ needs.prepare.outputs.version_code }}
       automatic: true
     secrets: inherit

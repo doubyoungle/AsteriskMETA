@@ -6,6 +6,15 @@ on:
       release_tag:
         type: string
         default: ''
+      release_commit:
+        type: string
+        default: ''
+      upstream_commit:
+        type: string
+        default: ''
+      version_code:
+        type: string
+        default: ''
       automatic:
         type: boolean
         default: false
@@ -32,15 +41,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.release_tag != '' && format('refs/tags/{0}', inputs.release_tag) || github.sha }}
+          ref: ${{ inputs.release_tag != '' && (inputs.release_commit || format('refs/tags/{0}', inputs.release_tag)) || github.sha }}
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false
 
       - name: Validate version
         if: inputs.release_tag != ''
+        env:
+          EXPECTED_COMMIT: ${{ inputs.release_commit }}
+          EXPECTED_VERSION_CODE: ${{ inputs.version_code }}
         run: |
           set -euo pipefail
+          if [[ -n "$EXPECTED_COMMIT" ]]; then
+            if [[ "$(git rev-parse HEAD)" != "$EXPECTED_COMMIT" ||
+                  "$(git rev-list --count HEAD)" != "$EXPECTED_VERSION_CODE" ]]; then
+              echo "::error::Checked out release commit or versionCode differs from the release plan."
+              exit 1
+            fi
+          fi
           upstream_version="$(awk -F '"' '/^[[:space:]]*const val VERSION_NAME = "/ { print $2; exit }' buildSrc/src/main/kotlin/BuildConfig.kt)"
           fork_revision="$(awk -F '=' '$1 == "asteriskMetaForkRevision" { print $2; exit }' gradle.properties)"
           expected_tag="v${upstream_version}-r.${fork_revision}"
@@ -146,9 +165,15 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       GH_TOKEN: ${{ github.token }}
+      DISTRIBUTED_VERSION_CODE_FLOOR: ${{ vars.DISTRIBUTED_VERSION_CODE_FLOOR }}
+      RELEASE_SIGNER_SHA256: ${{ vars.RELEASE_SIGNER_SHA256 }}
+      UPSTREAM_COMMIT: ${{ inputs.upstream_commit }}
+      RELEASE_VERSION_CODE: ${{ inputs.version_code }}
+      EXPECTED_RELEASE_COMMIT: ${{ inputs.release_commit }}
+      AUTOMATIC_RELEASE: ${{ inputs.automatic }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -174,16 +199,18 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          package_script="$RUNNER_TEMP/package-fork-release.sh"
-          cp .github/scripts/package-fork-release.sh "$package_script"
+          scripts="$RUNNER_TEMP/meta-release-scripts"
+          mkdir -p "$scripts"
+          cp .github/scripts/{package-fork-release.sh,publish-fork-release.sh,follow-upstream-release.py,fork_release_policy.py,fork-version-floor.sh,release-signer.sh} "$scripts/"
           if [[ -n "$RELEASE_TAG" ]]; then
-            git switch --detach "refs/tags/$RELEASE_TAG"
+            release_ref="${EXPECTED_RELEASE_COMMIT:-refs/tags/$RELEASE_TAG}"
+            git switch --detach "$release_ref"
           else
             upstream_version="$(awk -F '"' '/^[[:space:]]*const val VERSION_NAME = "/ { print $2; exit }' buildSrc/src/main/kotlin/BuildConfig.kt)"
             fork_revision="$(awk -F '=' '$1 == "asteriskMetaForkRevision" { print $2; exit }' gradle.properties)"
             export RELEASE_TAG="v${upstream_version}-r.${fork_revision}"
           fi
-          bash "$package_script"
+          bash "$scripts/package-fork-release.sh"
 
       - name: Upload signed test APKs
         if: inputs.release_tag == '' && inputs.sign_test_build
@@ -195,40 +222,4 @@ jobs:
 
       - name: Publish complete release
         if: inputs.release_tag != ''
-        env:
-          AUTOMATIC_RELEASE: ${{ inputs.automatic }}
-        run: |
-          set -euo pipefail
-          tag="$RELEASE_TAG"
-          candidate="$(git rev-list --count HEAD)"
-          if [[ "$AUTOMATIC_RELEASE" == true ]]; then
-            upstream_latest="$(gh api repos/Asterisk4Magisk/AsteriskMETA/releases/latest --jq '.tag_name')"
-            if [[ "$tag" != "$upstream_latest-r.1" ]]; then
-              echo "::error::Upstream latest changed to $upstream_latest during this build. Skipping $tag."
-              exit 1
-            fi
-            floor="$(bash .github/scripts/fork-version-floor.sh)"
-            if (( candidate <= floor )); then
-              echo "::error::Candidate versionCode $candidate no longer exceeds the test build floor $floor."
-              exit 1
-            fi
-          fi
-          latest="$(gh release list --exclude-drafts --exclude-pre-releases --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName')"
-          if [[ -n "$latest" && "$latest" != "$tag" ]]; then
-            published="$(gh release download "$latest" --pattern update-manifest.json --output - | jq -er '.versionCode | select(type == "number" and . > 0 and floor == .)')"
-            if (( candidate <= published )); then
-              echo "::error::The new versionCode ($candidate) must exceed the latest release ($published)."
-              exit 1
-            fi
-          fi
-          if existing="$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null)"; then
-            if [[ "$existing" != true ]]; then
-              echo "::error::A published release already exists for $tag."
-              exit 1
-            fi
-          else
-            gh release create "$tag" --verify-tag --draft --title "AsteriskMETA ${tag#v}" \
-              --generate-notes --notes "Version code: $candidate"
-          fi
-          gh release upload "$tag" release-artifacts/* --clobber
-          gh release edit "$tag" --draft=false --latest
+        run: bash "$RUNNER_TEMP/meta-release-scripts/publish-fork-release.sh"

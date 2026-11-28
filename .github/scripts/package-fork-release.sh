@@ -5,6 +5,12 @@ set -euo pipefail
 : "${RELEASE_KEYSTORE_BASE64:?Missing RELEASE_KEYSTORE_BASE64}"
 : "${RELEASE_KEYSTORE_PASSWORD:?Missing RELEASE_KEYSTORE_PASSWORD}"
 : "${RELEASE_KEY_ALIAS:?Missing RELEASE_KEY_ALIAS}"
+source "$(dirname "$0")/release-signer.sh"
+signer="${RELEASE_SIGNER_SHA256:-$legacy_signer}"
+signer="${signer//:/}"
+signer="$(tr '[:upper:]' '[:lower:]' <<< "$signer")"
+[[ "$signer" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::Invalid APK signing certificate fingerprint."; exit 1; }
+
 export RELEASE_KEY_PASSWORD="${RELEASE_KEY_PASSWORD:-$RELEASE_KEYSTORE_PASSWORD}"
 
 version="${RELEASE_TAG#v}"
@@ -50,7 +56,13 @@ for core in mihomo meow; do
       --ks "$work/release.keystore" --ks-key-alias "$RELEASE_KEY_ALIAS" \
       --ks-pass env:RELEASE_KEYSTORE_PASSWORD --key-pass env:RELEASE_KEY_PASSWORD \
       --out "$output" "$work/aligned.apk"
-    "$tools/apksigner" verify "$output"
+    certs="$("$tools/apksigner" verify --print-certs "$output" |
+      sed -nE 's/^(V[0-9]+([.][0-9]+)? )?Signer( #[0-9]+)?:? certificate SHA-256 digest: ([0-9a-fA-F]{64})$/\4/p' |
+      tr '[:upper:]' '[:lower:]' | sort -u)"
+    if [[ "$certs" != "$signer" ]]; then
+      echo "::error::Signing certificate mismatch for ${output##*/}"
+      exit 1
+    fi
   done
   for abi in arm64-v8a armeabi-v7a x86 x86_64 universal; do
     test -s "release-artifacts/AsteriskMETA_${version}${suffix}-${version_code}-${abi}.apk"
@@ -58,7 +70,7 @@ for core in mihomo meow; do
 done
 rm -f release-artifacts/*.idsig
 
-python3 - "$version_code" <<'PY'
+python3 - "$version_code" "$signer" <<'PY'
 import hashlib
 import json
 import os
@@ -78,6 +90,6 @@ for apk in sorted(directory.glob("*.apk")):
         "digest": f"sha256:{digest}",
         "browser_download_url": f"{download_base}/{apk.name}",
     })
-manifest = {"tag_name": tag, "versionCode": int(sys.argv[1]), "assets": assets}
+manifest = {"tag_name": tag, "versionCode": int(sys.argv[1]), "signerSha256": sys.argv[2], "assets": assets}
 (directory / "update-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 PY
